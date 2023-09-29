@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'package:weatherapp_3/model/weathermodel.dart';
 import 'package:weatherapp_3/view/Screen/widgets/additionalinformation.dart';
 import 'package:weatherapp_3/view/Screen/widgets/weatherforecast.dart';
@@ -16,38 +17,39 @@ class WeatherApp extends StatefulWidget {
 
 class _WeatherAppState extends State<WeatherApp> {
   late WeatherResponse? report;
+  late Future<WeatherResponse?> reload;
 
-  // final DataIntegration data = DataIntegration();
+  //final DataIntegration data = DataIntegration();
   @override
   void initState() {
-    getCurreentWeather();
+    reload = getCurreentWeather();
     super.initState();
   }
 
-  double? temp;
-  bool isloading = false;
-  Future getCurreentWeather() async {
+  // double? temp;
+  // bool isloading = false;
+  Future<WeatherResponse?> getCurreentWeather() async {
     try {
-      setState(() {
-        isloading = true;
-      });
+      // setState(() {
+      //   isloading = true;
+      // });
       String cityname = 'Kerala';
       final result = await http.get(Uri.parse(
           "https://api.openweathermap.org/data/2.5/forecast?q=$cityname&appid=e8dd0128155bc972c671748bbfdfd77a"));
       // print(result.body);
       final data = jsonDecode(result.body);
+      report = WeatherResponse.fromJson(data);
 
       if (int.parse(data['cod']) != 200) {
-        throw 'unexpected error occcurred';
+        throw data['message'];
       }
-      setState(() {
-        report = WeatherResponse.fromJson(data);
-        temp = data['list'][0]["main"]['temp'];
+      // setState(() {
+      //
+      //   temp = data['list'][0]["main"]['temp'];
 
-        isloading = false;
-      });
-
-      print(data['list'][0]['main']['temp']);
+      //   isloading = false;
+      // });
+      return report;
     } catch (e) {
       throw e.toString();
     }
@@ -62,7 +64,7 @@ class _WeatherAppState extends State<WeatherApp> {
             IconButton(
                 onPressed: () {
                   setState(() {
-                    getCurreentWeather();
+                    reload = getCurreentWeather();
                   });
                 },
                 icon: const Icon(Icons.refresh))
@@ -72,16 +74,34 @@ class _WeatherAppState extends State<WeatherApp> {
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
-        body: isloading
-            ? const Center(
-                child: CircularProgressIndicator(
-                strokeWidth: 5,
-              ))
-            : Padding(
+        body: FutureBuilder(
+            future: reload,
+            builder: (context, snapshot) {
+              print(snapshot);
+              print(snapshot.runtimeType);
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator.adaptive(
+                    strokeWidth: 4,
+                  ),
+                );
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text(snapshot.error.toString()));
+              }
+              return Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        report!.city.name,
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                     SizedBox(
                       height: 200,
                       width: double.infinity,
@@ -97,18 +117,22 @@ class _WeatherAppState extends State<WeatherApp> {
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
                                 Text(
-                                  " ${report!.list[0].main.temp}° K",
+                                  " ${report!.list[0].main.temp} K",
                                   style: const TextStyle(
                                       fontSize: 38,
                                       fontWeight: FontWeight.bold),
                                 ),
-                                const Icon(
-                                  Icons.cloud,
+                                Icon(
+                                  report!.list[0].weather[0].main == 'Clear' ||
+                                          report!.list[0].weather[0].main ==
+                                              'Rain'
+                                      ? Icons.cloud
+                                      : Icons.sunny,
                                   size: 60,
                                 ),
-                                const Text(
-                                  "Rain",
-                                  style: TextStyle(fontSize: 30),
+                                Text(
+                                  report!.list[0].weather[0].main,
+                                  style: const TextStyle(fontSize: 30),
                                 )
                               ],
                             ),
@@ -117,7 +141,7 @@ class _WeatherAppState extends State<WeatherApp> {
                       ),
                     ),
                     const Text(
-                      "Weather Forecast",
+                      "Hourly Forecast",
                       style:
                           TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                     ),
@@ -128,15 +152,22 @@ class _WeatherAppState extends State<WeatherApp> {
                       height: 150,
                       child: ListView.builder(
                           scrollDirection: Axis.horizontal,
-                          itemCount: 5,
+                          itemCount: 20,
                           itemBuilder: (context, index) {
+                            final time =
+                                DateTime.parse(report!.list[index].dtTxt);
                             return Row(
                               children: [
                                 HourlyForecastItem(
                                   temperature:
                                       "${report!.list[index].main.temp}",
-                                  time: '10:00',
-                                  icon: Icons.cloud,
+                                  time: DateFormat.j().format(time),
+                                  icon: report!.list[index].weather[0].main ==
+                                              'Clear' ||
+                                          report!.list[index].weather[0].main ==
+                                              'Rain'
+                                      ? Icons.cloud
+                                      : Icons.sunny,
                                 ),
                               ],
                             );
@@ -153,28 +184,29 @@ class _WeatherAppState extends State<WeatherApp> {
                     const SizedBox(
                       height: 14,
                     ),
-                    const Row(
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         AdditionalInfo(
                           data: 'Humidity',
                           icon: Icons.water_drop,
-                          temperature: '20',
+                          temperature: '${report!.list[0].main.humidity}',
                         ),
                         AdditionalInfo(
                           data: 'Wind speed',
-                          icon: Icons.wind_power,
-                          temperature: '20',
+                          icon: Icons.air,
+                          temperature: '${report!.list[0].wind.speed}',
                         ),
                         AdditionalInfo(
                           data: 'Pressure',
-                          icon: Icons.ramen_dining,
-                          temperature: '20',
+                          icon: Icons.hot_tub_outlined,
+                          temperature: '${report!.list[0].main.temp}',
                         ),
                       ],
                     )
                   ],
                 ),
-              ));
+              );
+            }));
   }
 }
